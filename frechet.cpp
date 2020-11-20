@@ -57,138 +57,75 @@ double* matrice_distance(double* traj1, int n1, double* traj2, int n2) {
         tailleL2++;
     }
 
+    // On initialise distance en fonction du nombre d'element dans le morceau de L2 reçu.
     double* distances = new double[n1 * tailleL2];
-
-    for(unsigned int i = 0; i < n1 * tailleL2; i++){
-        distances[i] = 0;
-    }
 
     // Calcul de la diagonale + de son max.
     for (int i=0; i < tailleL2; i++){
         double curr_dist = dist_e(traj1+(2 * (ilocal + i)), traj2+(2*i));
         distances[(ilocal + i + (i * n1))] = curr_dist;
+
         if(curr_dist > max_diag){
             max_diag = curr_dist;
         }
     }
 
+    // Si la trajectoire L1 a + d'éléments que la trajectoire L2, alors il faut calculer la fausse diagonale restante.
+    // On suppose donc que si le nombre d'élement des deux trajectoires est différents, alors L1 devra avoir le plus grand nombre.
     if(pid == (nprocs - 1) && n1 > n2){
         for(unsigned int i = 0; i < n1 - n2; i++){
-            double curr_dist = dist_e(traj1+(2 * i), traj2+(2*(tailleL2 - 1)));
+            double curr_dist = dist_e(traj1+(2 * (n2 + i)), traj2+(2*(tailleL2 - 1)));
             distances[(ilocal + (i + 1))] = curr_dist;
+
             if(curr_dist > max_diag){
                 max_diag = curr_dist;
             }
+
         }
     }
-    //std::cout << " pid : " << pid << std::endl;
 
-    /*for(int i = 0; i < n1 * tailleL2; i++){
-        std::cout << distances[i] << " ";
-    }
-    std::cout << std::endl;*/
-
+    // On applique une opération de réduction pour trouver le max sur la diagonale.
     MPI_Allreduce(&max_diag, &max_diagl_global, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    /*int count = 0;
-    double max_local = 0;
-    std::vector<double> diags;
-    for(int i = 0; i < max; i+= nprocs){
-        if(i + pid < max){
-            double curr_dist = 0;
-            if(i + pid >= min){
-                if(n1 < n2){
-                    curr_dist = dist_e(traj1+2*(min - 1), traj2+2*(i + pid));
-                }else{
-                    curr_dist = dist_e(traj1+2*(i + pid), traj2+2*(min - 1));
-                }
+    // Parcours triangulaire inférieur + calcul de la valeur + insertion dans distances.
+    for(int i = 0; i < tailleL2; i++){
+        bool colBigger = false;
+        for(int j = ilocal + 1; j < n1; j++){
+            if(colBigger){
+                distances[(i * n1) + j] = INFINITY;
             }else{
-                curr_dist = dist_e(traj1+2*(i + pid), traj2+2*(i + pid));
-            }
-            if(curr_dist > max_local){
-                max_local = curr_dist;
-            }
-            diags.push_back(curr_dist);
-            count++;
-        }
-    }*/
-
-    // J'ai la diagonale + le max de la diagonale
-
-    if(pid == 0){
-        for(int i = 0; i < max; i++){
-            //distances[(pid * i * min) + (i * nprocs)] = buff[i];
-        }
-    }
-
-    // Calcul de la diagonale + de son max.
-    /* for (int i=0; i<min; i++){
-        double curr_dist = dist_e(traj1+2*i, traj2+2*i);
-        distances[i*min+i] = curr_dist;
-        if(curr_dist > max_diag){
-            max_diag = curr_dist;
-        }
-    }
-
-    // Calcul de la fausse diagonale : on ne passera la que si min et max sont différents.
-    for(int i = min; i < max; i++){
-        double curr_dist = 0;
-        if(n1 < n2){
-            curr_dist = dist_e(traj1+2*(min - 1), traj2+2*i);
-        }else{
-            curr_dist = dist_e(traj1+2*i, traj2+2*(min - 1));
-        }
-        distances[(i * min) + (min - 1)] = curr_dist;
-
-        if(curr_dist > max_diag){
-            max_diag = curr_dist;
-        }
-    }
-    
-    // Parcours triangulaire superieur.
-    for(int i = 0; i < n1; i++){
-        bool bigger = false;
-        for(int j = i + 1; j < n2; j++){
-            if(bigger){
-                distances[i * n2 + j] = INFINITY;
-            }else{
-                double curr_dist = dist_e(traj1+2*i, traj2+2*j);
-                if(curr_dist <= max_diag){
-                    distances[i * n2 + j] = curr_dist;
+                double curr_dist = dist_e(traj1+(2*j), traj2+(2*i));
+                if(curr_dist > max_diagl_global){
+                    distances[(i * n1) + j] = INFINITY;
+                    colBigger = true;
                 }else{
-                    bigger = true;
-                    distances[i * n2 + j] = INFINITY;
+                    distances[(i * n1) + j] = curr_dist;
                 }
             }
         }
     }
 
-    // Parcours triangulaire inférieur
-    for(int i = 0; i < n2; i++){
-        bool bigger = false;
-        for(int j = i; j < n1; j++){
-            if(bigger){
-                distances[j * n2 + i] = INFINITY;
+    // Parcours triangulaire supérieur + calcul de la valeur + insertion dans distances.
+    for(int i = 0; i < ilocal + tailleL2 - 1; i++){
+        bool rowBigger = false;
+        for(int j = 0; j < tailleL2; j++){
+            if(i == ilocal + j){
+                continue;
+            }
+            if(rowBigger){
+                distances[(j * n1) + i] = INFINITY;  
             }else{
-                double curr_dist = dist_e(traj1+2*j, traj2+2*i);
-                if(curr_dist <= max_diag){
-                    distances[j * n2 + i] = curr_dist;
+                double curr_dist = dist_e(traj1+(2*i), traj2+(2*j));
+                if(curr_dist > max_diagl_global){
+                    rowBigger = true;
+                    distances[(j * n1) + i] = INFINITY;
                 }else{
-                    bigger = true;
-                    distances[j * n2 + i] = INFINITY;
+                    distances[(j * n1) + i] = curr_dist;
                 }
             }
+            
         }
-    } */
-
-    // Matrice de distance non optimisée
-
-   /* for (int i=0; i<n1; i++){
-        for (int j=0; j<n2; j++){
-            double curr_dist = dist_e(traj1+2*i, traj2+2*j);
-            distances[i * n2 + j] = curr_dist;
-        }
-    }*/
+    }
 
     return distances;
 }
@@ -229,7 +166,6 @@ int main(int argc, char*argv[]) {
     int* displs;
     double* traj2_scattered;
 
-
     int pid, nprocs;  
     MPI_Status status;
     MPI_Init (&argc , &argv);
@@ -237,9 +173,11 @@ int main(int argc, char*argv[]) {
     MPI_Comm_size (MPI_COMM_WORLD, &nprocs);
 
     if(pid == 0){
+        // On ne lit que les trajectoires dans le processeur 0
         traj1 = lecture(argv[1],&n_traj[0]);
         traj2 = lecture(argv[2],&n_traj[1]);
 
+        // On initialise displs et sendcounts uniquement dans le processeur 0
         sendcounts = new int[nprocs];
         displs = new int[nprocs];
         int reste = n_traj[1] % nprocs;
@@ -264,12 +202,14 @@ int main(int argc, char*argv[]) {
 
     }
 
+    // On broadcast le nombre d'élements des tableaux de distances.
     MPI_Bcast(n_traj, 2, MPI_INT, 0, MPI_COMM_WORLD);
 
     if(pid != 0){
         traj1 = new double[2 * n_traj[0]];
     }
 
+    // On broadcast la trajectoire L1.
     MPI_Bcast(traj1, 2 * n_traj[0], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     int nlocal = n_traj[1] / nprocs;
@@ -281,10 +221,13 @@ int main(int argc, char*argv[]) {
 
     nlocal *= 2;
 
+    // traj2_scattered correspond au morceau de L2 reçu pour chaque processeur.
     traj2_scattered = new double[nlocal];
 
+    // On découpe L2 en fonction du nombre de processeurs.
     MPI_Scatterv(traj2, sendcounts, displs, MPI_DOUBLE, traj2_scattered, nlocal, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+    // On calcule la matrice de distance pour chaque processeur.
     double* mat_dist = matrice_distance(traj1,n_traj[0],traj2_scattered,n_traj[1]);
 
     double* distances;
@@ -304,55 +247,54 @@ int main(int argc, char*argv[]) {
         }
     }
 
+    // On rassemble les tableaux de distances des différents processeurs dans le tableau "distances".
     MPI_Gatherv(mat_dist, (n_traj[0] * (nlocal / 2)) , MPI_DOUBLE, distances, distances_recvcounts, distances_displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    double* distances_transposee;
 
+    // Comme on a rassembler à la suite les différentes colonnes de la matrice de distance finale,
+    // Il faut transposer ce tableau afin que ces colonnes deviennent vraiment des colonnes et non pas
+    // des lignes comme avant la transposition. Merci Mme.Robert.
     if(pid == 0){
-        // Transposition du tableau 
+        // Transposition du tableau
+        distances_transposee = new double[n_traj[0] * n_traj[1]];
         for(int i = 0; i < n_traj[0]; i++){
-            for(int j = i+1; j < n_traj[1]; j++){
-                double temp = distances[i * n_traj[0] + j];
-                std::cout << i * n_traj[0] + j << " avec " << j * (n_traj[1] + 1) + i << std::endl;
-                distances[i * n_traj[0] + j] = distances[i * n_traj[0] + j + i];
-                distances[j * (n_traj[1] + 1) + i] = temp;
-            }
-        }
-        for(unsigned int i = 0; i < n_traj[0] * n_traj[1]; i++){
-            std::cout << distances[i] << "   ";
-            if(i % n_traj[1] == 0  && i != 0){
-                std::cout << std::endl;
+            for(int j = 0; j < n_traj[1]; j++){
+                distances_transposee[i * n_traj[1] + j] = distances[i + (j * n_traj[0])];
             }
         }
     }
-    /*if(pid == 0){
+
+    if(pid == 0){
         cout << "la matrice de distance" << endl;
 
-        for (int i=0; i<n_traj1; i++) {
-            for (int j = 0; j < n_traj2; j++)
-                cout << mat_dist[i * n_traj2 + j] << "  ";
+        for (int i=0; i<n_traj[0]; i++) {
+            for (int j = 0; j < n_traj[1]; j++)
+                cout << distances_transposee[i * n_traj[1] + j] << "  ";
+            cout << endl;
+        }
+
+        double* frechet = matrice_frechet(distances_transposee,n_traj[0],n_traj[1]);
+
+        cout << "la matrice de fréchet" << endl;
+
+        for (int i=0; i<n_traj[0]; i++) {
+            for (int j = 0; j < n_traj[1]; j++)
+                cout << frechet[i * n_traj[1] + j] << " ";
             cout << endl;
         }
     }
-
-
-    double* frechet = matrice_frechet(mat_dist,n_traj1,n_traj2);
-
-    cout << "la matrice de fréchet" << endl;
-
-    for (int i=0; i<n_traj1; i++) {
-        for (int j = 0; j < n_traj2; j++)
-            cout << frechet[i * n_traj2 + j] << " ";
-        cout << endl;
-    }
-    */ 
+    
     MPI_Finalize();
 
-   //delete[] traj2_scattered;
+    // Libérations de mémoire.
+    delete[] traj2_scattered;
 
     if(pid == 0){
         delete[] displs;
         delete[] sendcounts;
         delete[] distances;
         delete[] distances_displs;
+        delete[] distances_transposee;
     }
 
     delete[] mat_dist;
