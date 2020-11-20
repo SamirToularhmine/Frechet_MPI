@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+frechet
+
+# VScode
+.vscode
